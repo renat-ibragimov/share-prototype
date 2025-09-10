@@ -14,19 +14,22 @@
         <span class="icon">📈</span>
         <span>Best Performing Overall</span>
         <button id="refresh" title="Refresh">⟳</button>
-        <button id="share-top" title="Share">🔗 Share</button>
+        <div class="menu-anchor">
+          <button id="share-top" class="icon-btn" title="Share">🔗 Share</button>
+          <div id="menu-top" class="menu hidden"></div>
+        </div>
       </div>
       <div id="pairs" class="list"></div>
       <div class="actions">
         <button class="secondary">Strategy Details</button>
         <button class="primary">Build Strategy</button>
       </div>
-      <!-- share row for top will be injected here -->
-      <div id="share-row-top"></div>
     </div>
 
     <!-- Right card: Details -->
-    <div id="details" class="card details hidden"></div>
+    <div id="details" class="card details hidden">
+      <!-- details content injected -->
+    </div>
   </div>
 
   <script src="/static/script.js"></script>

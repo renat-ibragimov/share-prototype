@@ -1,15 +1,39 @@
-from flask import Flask, jsonify, send_from_directory, send_file, request, render_template_string, url_for
-from flask_cors import CORS
 from io import BytesIO
+from typing import Optional
+
+from flask import (
+    Flask,
+    jsonify,
+    send_from_directory,
+    send_file,
+    request,
+    render_template_string,
+    url_for,
+)
+from flask_cors import CORS
 from PIL import Image, ImageDraw, ImageFont
-from math import sin, cos, radians
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app)
 
-# ---------------------------
+# =========================
+# Config / cache-busting
+# =========================
+APP_ASSET_VERSION = "v3"  # меняй при каждом редизайне превью
+
+def bust(url: str) -> str:
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}v={APP_ASSET_VERSION}"
+
+def nocache_png_response(buf: BytesIO):
+    resp = send_file(buf, mimetype="image/png")
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+# =========================
 # Hardcoded demo data
-# ---------------------------
+# =========================
 PAIRS = [
     {"rank": 1, "symbol": "BTC", "name": "Bitcoin",  "score": 94, "apy": 245},
     {"rank": 2, "symbol": "ETH", "name": "Ethereum", "score": 89, "apy": 189},
@@ -46,16 +70,16 @@ DETAILS = {
     },
 }
 
-# ---------------------------
+# =========================
 # Static index
-# ---------------------------
+# =========================
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
 
-# ---------------------------
+# =========================
 # API for frontend
-# ---------------------------
+# =========================
 @app.get("/api/pairs")
 def get_pairs():
     return jsonify({"items": PAIRS})
@@ -67,9 +91,9 @@ def get_pair(symbol: str):
         return jsonify(DETAILS[sym])
     return jsonify({"error": "Not found"}), 404
 
-# ---------------------------
+# =========================
 # Image generation helpers
-# ---------------------------
+# =========================
 def _font(size: int):
     """Try DejaVuSans if present, else default bitmap font."""
     try:
@@ -84,9 +108,9 @@ def _draw_kv(draw: ImageDraw.ImageDraw, x, y, k, v,
     w = draw.textlength(v, font=_font(f2))
     draw.text((total_w - right - w, y - 4), v, font=_font(f2), fill=v_color)
 
-# ---------------------------
+# =========================
 # Share: OG images
-# ---------------------------
+# =========================
 @app.get("/share/image/top.png")
 def share_image_top():
     items = PAIRS
@@ -98,7 +122,7 @@ def share_image_top():
     draw.text((80, 70), "Best Performing Overall", font=_font(44), fill=(230,230,235))
 
     y = 140
-    for it in items:
+    for it in items[:5]:
         y2 = y + 80
         draw.rounded_rectangle((80, y, W-80, y2), radius=14, fill=(39, 48, 64))
         draw.text((100, y+22), str(it["rank"]), font=_font(28), fill=(150,160,173))
@@ -117,7 +141,7 @@ def share_image_top():
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return nocache_png_response(buf)
 
 @app.get("/share/image/pair/<symbol>.png")
 def share_image_pair(symbol):
@@ -136,7 +160,6 @@ def share_image_pair(symbol):
 
     price_line = f'${d["price"]:,.2f}'
     draw.text((80, 180), price_line, font=_font(56), fill=(235,235,240))
-    # change pct right after price
     px_w = draw.textlength(price_line, font=_font(56))
     ch = "▲" if d["change_pct"] >= 0 else "▼"
     color = (110,220,170) if d["change_pct"] >= 0 else (240,120,120)
@@ -152,11 +175,11 @@ def share_image_pair(symbol):
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
-    return send_file(buf, mimetype="image/png")
+    return nocache_png_response(buf)
 
-# ---------------------------
-# Share: pages with OG/Twitter tags
-# ---------------------------
+# =========================
+# Share: OG pages
+# =========================
 SHARE_PAGE_TPL = """
 <!doctype html>
 <html>
@@ -185,7 +208,7 @@ SHARE_PAGE_TPL = """
 @app.get("/share/top")
 def share_top_page():
     base = request.url_root.rstrip("/")
-    image = base + url_for("share_image_top")
+    image = bust(base + url_for("share_image_top"))
     app_url = base + "/"
     html = render_template_string(
         SHARE_PAGE_TPL,
@@ -202,7 +225,7 @@ def share_pair_page(symbol):
     if not d:
         return "Not Found", 404
     base = request.url_root.rstrip("/")
-    image = base + url_for("share_image_pair", symbol=symbol.upper())
+    image = bust(base + url_for("share_image_pair", symbol=symbol.upper()))
     app_url = base + f"/#/{symbol.upper()}"
     html = render_template_string(
         SHARE_PAGE_TPL,
@@ -213,18 +236,19 @@ def share_pair_page(symbol):
     )
     return html
 
-# ---------------------------
-# Share: API for frontend buttons
-# ---------------------------
-def _share_payload(kind: str, symbol: str | None = None):
+# =========================
+# Share: API for frontend menus
+# =========================
+def _share_payload(kind: str, symbol: Optional[str] = None):
     base = request.url_root.rstrip("/")
     if kind == "top":
-        page = f"{base}/share/top"
-        image = f"{base}/share/image/top.png"
+        page  = bust(f"{base}/share/top")
+        image = bust(f"{base}/share/image/top.png")
         title = "Best Performing Overall — Crypto Prototype"
     else:
-        page = f"{base}/share/pair/{symbol}"
-        image = f"{base}/share/image/pair/{symbol}.png"
+        assert symbol is not None
+        page  = bust(f"{base}/share/pair/{symbol}")
+        image = bust(f"{base}/share/image/pair/{symbol}.png")
         title = f'{DETAILS[symbol]["name"]} ({symbol}) — Trading Analysis'
 
     tg_url = f"https://t.me/share/url?url={page}&text={title}"
@@ -249,191 +273,8 @@ def api_share_pair(symbol):
         return jsonify({"error": "Not found"}), 404
     return jsonify(_share_payload("pair", sym))
 
-def _linear_gradient(width, height, start_color, end_color):
-    """Create a vertical linear gradient image."""
-    base = Image.new("RGB", (width, height), start_color)
-    top = Image.new("RGB", (width, height), end_color)
-    mask = Image.new("L", (width, height))
-    m = ImageDraw.Draw(mask)
-    for y in range(height):
-        alpha = int(255 * (y / max(1, height-1)))
-        m.line([(0, y), (width, y)], fill=alpha)
-    base.paste(top, (0, 0), mask)
-    return base
-
-def _rounded_rect(draw, xy, radius, fill):
-    x1, y1, x2, y2 = xy
-    draw.rounded_rectangle([x1, y1, x2, y2], radius=radius, fill=fill)
-
-def _draw_rocket(draw, ox, oy, scale=1.0):
-    """
-    Cute minimal rocket (vector-ish): body, nose, fins, window, flame.
-    ox, oy — top-left anchor of rocket area.
-    """
-    # Colors
-    white = (240, 244, 255)
-    violet = (160, 130, 255)
-    cyan = (130, 210, 255)
-    dark = (24, 20, 40)
-    flame_yellow = (255, 200, 80)
-    flame_orange = (255, 140, 80)
-    flame_red = (240, 70, 70)
-
-    # body
-    body = [
-        (ox + 60*scale, oy + 180*scale),
-        (ox + 90*scale, oy + 60*scale),
-        (ox + 120*scale, oy + 180*scale),
-    ]
-    draw.polygon(body, fill=white)
-
-    # nose gradient-ish
-    draw.ellipse(
-        [ox + 80*scale, oy + 34*scale, ox + 100*scale, oy + 54*scale],
-        fill=violet
-    )
-
-    # window
-    draw.ellipse(
-        [ox + 88*scale, oy + 95*scale, ox + 112*scale, oy + 119*scale],
-        fill=cyan, outline=(230, 230, 255)
-    )
-
-    # fins
-    draw.polygon([(ox+60*scale, oy+180*scale), (ox+40*scale, oy+160*scale), (ox+60*scale, oy+140*scale)],
-                 fill=violet)
-    draw.polygon([(ox+120*scale, oy+180*scale), (ox+140*scale, oy+160*scale), (ox+120*scale, oy+140*scale)],
-                 fill=violet)
-
-    # flame (layers)
-    draw.polygon([(ox+90*scale, oy+180*scale), (ox+75*scale, oy+210*scale), (ox+105*scale, oy+210*scale)],
-                 fill=flame_red)
-    draw.polygon([(ox+90*scale, oy+182*scale), (ox+78*scale, oy+206*scale), (ox+102*scale, oy+206*scale)],
-                 fill=flame_orange)
-    draw.polygon([(ox+90*scale, oy+185*scale), (ox+82*scale, oy+202*scale), (ox+98*scale, oy+202*scale)],
-                 fill=flame_yellow)
-
-    # smoke puffs
-    for i, r in enumerate([18, 14, 10, 8, 6]):
-        draw.ellipse(
-            [ox + (70 + i*12)*scale - r, oy + (200 + i*12)*scale - r,
-             ox + (70 + i*12)*scale + r, oy + (200 + i*12)*scale + r],
-            fill=(255, 255, 255, 25)
-        )
-
-def _fit_text(draw, text, max_width, base_size, min_size=14, step=-2):
-    """Find a font size that fits text into max_width."""
-    s = base_size
-    while s >= min_size:
-        f = _font(s)
-        if draw.textlength(text, font=f) <= max_width:
-            return f
-        s += step
-    return _font(min_size)
-
-def _render_top5_violet(items, tagline: str = "See details in GT-App and trade smarter"):
-    """
-    Draws a violet-themed 1200x630 PNG with:
-    - gradient bg
-    - TOP 5 CRYPTO header
-    - rocket
-    - pretty list of coins (rank, symbol, name, score/apy)
-    - bottom tagline
-    """
-    W, H = 1200, 630
-    # gradient background
-    bg = _linear_gradient(W, H, (12, 10, 20), (30, 15, 60))
-    img = bg.convert("RGB")
-    draw = ImageDraw.Draw(img)
-
-    # top card
-    _rounded_rect(draw, (40, 40, W-40, H-40), radius=28, fill=(26, 20, 46))
-
-    # header
-    title = "TOP 5 CRYPTO!"
-    title_font = _fit_text(draw, title, max_width=700, base_size=72)
-    draw.text((80, 70), title, font=title_font, fill=(245, 240, 255))
-
-    # subheader
-    sub = "Best Performing Overall"
-    sub_font = _font(28)
-    draw.text((80, 130), sub, font=sub_font, fill=(180, 165, 230))
-
-    # rocket on the right
-    _draw_rocket(draw, ox=900, oy=70, scale=1.1)
-
-    # list panel
-    _rounded_rect(draw, (70, 180, W-70, 470), radius=22, fill=(36, 28, 64))
-    y = 195
-    for it in items[:5]:
-        # row container
-        _rounded_rect(draw, (90, y, W-90, y+52), radius=14, fill=(46, 38, 78))
-        # rank
-        draw.text((106, y+14), f"#{it['rank']}", font=_font(22), fill=(160, 150, 210))
-        # symbol & name
-        draw.text((170, y+8), it["symbol"], font=_font(26), fill=(245, 242, 255))
-        draw.text((170, y+30), it["name"],   font=_font(18), fill=(170, 160, 210))
-        # score / apy right side
-        score = f"{it['score']}% Score"
-        apy   = f"{it['apy']}% APY"
-        w2 = draw.textlength(apy, font=_font(22))
-        w1 = draw.textlength(score, font=_font(22))
-        px = W - 110
-        draw.text((px - w2, y+14), apy,   font=_font(22), fill=(120, 230, 180))
-        draw.text((px - w2 - 20 - w1, y+14), score, font=_font(22), fill=(120, 230, 180))
-        y += 56
-
-    # bottom tagline (centered)
-    tagline_font = _fit_text(draw, tagline, max_width=W-200, base_size=30)
-    tag_w = draw.textlength(tagline, font=tagline_font)
-    draw.text(((W - tag_w)//2, 500), tagline, font=tagline_font, fill=(210, 200, 245))
-
-    # watermark / brand (optional small)
-    brand = "gt-app prototype"
-    brand_w = draw.textlength(brand, font=_font(16))
-    draw.text((W-60-brand_w, H-58), brand, font=_font(16), fill=(150, 140, 200))
-
-    # buffer to PNG
-    buf = BytesIO()
-    img.save(buf, "PNG")
-    buf.seek(0)
-    return buf
-
-@app.get("/share/image/top_violet.png")
-def share_image_top_violet():
-    # Можно прокинуть кастомный слоган через ?tagline=...
-    tagline = request.args.get("tagline") or "See details in GT-App and trade smarter"
-    buf = _render_top5_violet(PAIRS, tagline=tagline)
-    return send_file(buf, mimetype="image/png")
-
-# OG-страница нового стиля
-@app.get("/share/top-violet")
-def share_top_violet_page():
-    base = request.url_root.rstrip("/")
-    image = base + url_for("share_image_top_violet")
-    app_url = base + "/"
-    html = render_template_string(
-        SHARE_PAGE_TPL,
-        title="TOP 5 CRYPTO! — GT-App",
-        desc="Best Performing Overall. See details in GT-App and trade smarter.",
-        image=image,
-        app_url=app_url,
-    )
-    return html
-
-# API payload для фронта (если хочешь кнопки к новому стилю)
-@app.get("/api/share/top_violet")
-def api_share_top_violet():
-    base = request.url_root.rstrip("/")
-    page = f"{base}/share/top-violet"
-    image = f"{base}/share/image/top_violet.png"
-    title = "TOP 5 CRYPTO! — GT-App"
-    tg_url = f"https://t.me/share/url?url={page}&text={title}"
-    x_url  = f"https://twitter.com/intent/tweet?text={title}&url={page}"
-    return jsonify({"page_url": page, "image_url": image, "telegram_url": tg_url, "x_url": x_url, "title": title})
-
-# ---------------------------
+# =========================
 # Dev server
-# ---------------------------
+# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

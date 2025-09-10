@@ -1,30 +1,25 @@
 :root{
   --bg:#0f1115; --panel:#171a21; --panel-2:#1f2430;
-  --text:#e6e6e6; --muted:#9aa3af; --accent:#22c55e; --accent-2:#f59e0b;
+  --text:#e6e6e6; --muted:#9aa3af; --accent:#22c55e;
   --chip-bg:#0b7a2a22; --shadow:0 10px 24px rgba(0,0,0,.35);
   --radius:14px;
 }
-
 *{box-sizing:border-box}
-body{
-  margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu;
-  background:var(--bg); color:var(--text);
-}
-.wrap{
-  max-width:980px; margin:40px auto; padding:0 16px;
-  display:grid; gap:16px; grid-template-columns:1fr 1fr;
-}
-.card{background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px;}
+body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu; background:var(--bg); color:var(--text)}
+.wrap{max-width:980px; margin:40px auto; padding:0 16px; display:grid; gap:16px; grid-template-columns:1fr 1fr}
+.card{background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; position:relative}
 .card-header{display:flex; align-items:center; gap:10px; font-weight:700; margin-bottom:12px}
 .card-header .icon{background:#242938; padding:8px; border-radius:10px}
 #refresh{margin-left:auto; background:transparent; color:var(--muted); border:0; font-size:18px; cursor:pointer}
-#share-top{margin-left:8px;background:transparent;color:var(--muted);border:0;font-size:18px;cursor:pointer}
+.icon-btn{background:transparent; color:var(--muted); border:0; font-size:14px; cursor:pointer}
+.menu-anchor{position:relative}
 
-.list .row{
-  display:flex; align-items:center; gap:12px;
-  background:var(--panel-2); border-radius:12px;
-  padding:14px; margin:10px 0; cursor:pointer; transition:transform .06s ease
-}
+.menu{position:absolute; top:28px; right:0; background:var(--panel-2); border-radius:10px; box-shadow:var(--shadow); padding:8px; min-width:180px; z-index:10}
+.menu.hidden{display:none}
+.menu button, .menu a{display:block; width:100%; text-align:left; background:transparent; color:#d6d6d6; border:0; padding:8px 10px; border-radius:8px; cursor:pointer; text-decoration:none}
+.menu button:hover, .menu a:hover{background:#2c3342}
+
+.list .row{display:flex; align-items:center; gap:12px; background:var(--panel-2); border-radius:12px; padding:14px; margin:10px 0; cursor:pointer; transition:transform .06s ease}
 .list .row:hover{transform:translateY(-1px)}
 .rank{width:24px; text-align:center; color:var(--muted)}
 .symbol{font-weight:700}
@@ -46,8 +41,5 @@ button.secondary{background:#293040; color:#d6d6d6; border:0; padding:12px 14px;
 .k{color:var(--muted)}
 .v{font-weight:700}
 .tag{font-size:12px; padding:3px 8px; border-radius:999px; background:#ffffff14; color:#ddd}
-
-.share-row{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}
-.share-btn{background:#293040;color:#d6d6d6;border:0;padding:10px 12px;border-radius:10px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
 
 @media (max-width:900px){ .wrap{grid-template-columns:1fr} }

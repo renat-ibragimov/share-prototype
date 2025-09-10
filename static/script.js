@@ -2,7 +2,15 @@ const pairsRoot = document.getElementById("pairs");
 const detailsRoot = document.getElementById("details");
 const refreshBtn = document.getElementById("refresh");
 const shareTopBtn = document.getElementById("share-top");
-const shareTopSlot = document.getElementById("share-row-top");
+const menuTop = document.getElementById("menu-top");
+
+function closeAllMenus() {
+  document.querySelectorAll(".menu").forEach(m => m.classList.add("hidden"));
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".menu-anchor")) closeAllMenus();
+});
 
 async function fetchPairs() {
   const res = await fetch("/api/pairs");
@@ -22,27 +30,24 @@ async function shareData(kind, symbol=null) {
   return res.json();
 }
 
-function renderShareRow(payload) {
-  const row = document.createElement("div");
-  row.className = "share-row";
-  row.innerHTML = `
-    <button class="share-btn" data-x="${payload.x_url}">Share to X</button>
-    <button class="share-btn" data-tg="${payload.telegram_url}">Share to Telegram</button>
-    <button class="share-btn" data-copy="${payload.page_url}">Copy link</button>
-    <a class="share-btn" href="${payload.image_url}" download>Download image</a>
+function renderShareMenu(container, payload) {
+  container.innerHTML = `
+    <button data-x="${payload.x_url}">Share to X</button>
+    <button data-tg="${payload.telegram_url}">Share to Telegram</button>
+    <button data-copy="${payload.page_url}">Copy link</button>
+    <a href="${payload.image_url}" download>Download image</a>
   `;
-  row.addEventListener("click", async (e) => {
-    const b = e.target.closest(".share-btn");
-    if (!b) return;
-    if (b.dataset.x) window.open(b.dataset.x, "_blank");
-    if (b.dataset.tg) window.open(b.dataset.tg, "_blank");
-    if (b.dataset.copy) {
-      await navigator.clipboard.writeText(b.dataset.copy);
-      b.textContent = "Copied!";
-      setTimeout(() => b.textContent = "Copy link", 1200);
+  container.onclick = async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    if (btn.dataset.x) window.open(btn.dataset.x, "_blank");
+    if (btn.dataset.tg) window.open(btn.dataset.tg, "_blank");
+    if (btn.dataset.copy) {
+      await navigator.clipboard.writeText(btn.dataset.copy);
+      btn.textContent = "Copied!";
+      setTimeout(() => (btn.textContent = "Copy link"), 1200);
     }
-  });
-  return row;
+  };
 }
 
 function renderPairs(items) {
@@ -74,20 +79,21 @@ function formatMoney(n) {
 async function openDetails(symbol) {
   const d = await fetchDetails(symbol);
   detailsRoot.classList.remove("hidden");
+
+  // header with its own share button + menu
   detailsRoot.innerHTML = `
-    <div class="title">
-      <div class="icon">🟠</div>
-      <div>
-        <div style="display:flex; gap:6px; align-items:center;">
-          <strong>${d.name}</strong>
-          <span class="tag">${d.symbol}</span>
-        </div>
-        <div class="tag">${d.score}% Trading Score</div>
+    <div class="card-header">
+      <span class="icon">🟠</span>
+      <span>${d.name} <span class="tag">${d.symbol}</span></span>
+      <div class="menu-anchor" style="margin-left:auto;">
+        <button class="icon-btn" id="share-coin-btn">🔗 Share</button>
+        <div class="menu hidden" id="menu-coin"></div>
       </div>
     </div>
-    <div class="price">$${formatMoney(d.price)}</div>
+    <div class="tag">${d.score}% Trading Score</div>
+    <div class="price" style="margin-top:8px;">$${formatMoney(d.price)}</div>
     <div class="tag">${d.change_pct >= 0 ? "▲" : "▼"} ${d.change_pct}%</div>
-    <div class="kv">
+    <div class="kv" style="margin-top:8px;">
       <div class="item"><span class="k">Binance Volume (24h)</span><span class="v">$${formatMoney(d.volume_24h)}</span></div>
       <div class="item"><span class="k">Cap</span><span class="v">$${formatMoney(d.cap)}</span></div>
       <div class="item"><span class="k">Volatility</span><span class="v">${d.volatility}%</span></div>
@@ -97,34 +103,32 @@ async function openDetails(symbol) {
     </div>
   `;
 
-  // Inject share buttons for the selected pair
   const payload = await shareData("pair", symbol);
-  const row = renderShareRow(payload);
-  detailsRoot.appendChild(row);
+  const menuCoin = document.getElementById("menu-coin");
+  renderShareMenu(menuCoin, payload);
+
+  document.getElementById("share-coin-btn").onclick = (e) => {
+    e.stopPropagation();
+    menuCoin.classList.toggle("hidden");
+  };
 
   detailsRoot.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function boot() {
-  // list
   const items = await fetchPairs();
   renderPairs(items);
-  // default open first
   if (items[0]) openDetails(items[0].symbol);
 
-  // share for top list
-  shareTopSlot.innerHTML = "";
+  // top share menu
   const payload = await shareData("top");
-  shareTopSlot.appendChild(renderShareRow(payload));
+  renderShareMenu(menuTop, payload);
 }
 
 refreshBtn.addEventListener("click", boot);
-shareTopBtn.addEventListener("click", async () => {
-  // also copy link quickly on click
-  const payload = await shareData("top");
-  await navigator.clipboard.writeText(payload.page_url);
-  shareTopBtn.textContent = "✔";
-  setTimeout(() => shareTopBtn.textContent = "🔗 Share", 900);
+shareTopBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  menuTop.classList.toggle("hidden");
 });
 
 boot();
