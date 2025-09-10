@@ -1,5 +1,6 @@
 from io import BytesIO
 from typing import Optional
+import os
 
 from flask import (
     Flask,
@@ -19,7 +20,8 @@ CORS(app)
 # =========================
 # Config / cache-busting
 # =========================
-APP_ASSET_VERSION = "v3"  # меняй при каждом редизайне превью
+APP_ASSET_VERSION = "v4"          # меняй при каждом редизайне
+DEFAULT_STYLE = "violet"          # "violet" (новый) или "classic" (старый)
 
 def bust(url: str) -> str:
     sep = "&" if "?" in url else "?"
@@ -92,7 +94,7 @@ def get_pair(symbol: str):
     return jsonify({"error": "Not found"}), 404
 
 # =========================
-# Image generation helpers
+# Fonts & helpers (Pillow)
 # =========================
 def _font(size: int):
     """Try DejaVuSans if present, else default bitmap font."""
@@ -101,6 +103,9 @@ def _font(size: int):
     except Exception:
         return ImageFont.load_default()
 
+def _text_w(draw: ImageDraw.ImageDraw, text: str, size: int) -> float:
+    return draw.textlength(text, font=_font(size))
+
 def _draw_kv(draw: ImageDraw.ImageDraw, x, y, k, v,
              k_color=(160,170,185), v_color=(230,230,235),
              f1=28, f2=32, right=80, total_w=1200):
@@ -108,19 +113,60 @@ def _draw_kv(draw: ImageDraw.ImageDraw, x, y, k, v,
     w = draw.textlength(v, font=_font(f2))
     draw.text((total_w - right - w, y - 4), v, font=_font(f2), fill=v_color)
 
+def _fit_text(draw, text, max_width, base_size, min_size=14, step=-2):
+    s = base_size
+    while s >= min_size:
+        f = _font(s)
+        if draw.textlength(text, font=f) <= max_width:
+            return f
+        s += step
+    return _font(min_size)
+
+# ===== Violet theme primitives =====
+def _linear_gradient(width, height, start_color, end_color):
+    base = Image.new("RGB", (width, height), start_color)
+    top = Image.new("RGB", (width, height), end_color)
+    mask = Image.new("L", (width, height))
+    m = ImageDraw.Draw(mask)
+    for y in range(height):
+        alpha = int(255 * (y / max(1, height-1)))
+        m.line([(0, y), (width, y)], fill=alpha)
+    base.paste(top, (0, 0), mask)
+    return base
+
+def _draw_rocket(draw, ox, oy, scale=1.0):
+    white = (240, 244, 255)
+    violet = (160, 130, 255)
+    cyan = (130, 210, 255)
+    flame_yellow = (255, 200, 80)
+    flame_orange = (255, 140, 80)
+    flame_red = (240, 70, 70)
+
+    # body
+    draw.polygon([(ox + 60*scale, oy + 180*scale),
+                  (ox + 90*scale, oy + 60*scale),
+                  (ox + 120*scale, oy + 180*scale)], fill=white)
+    # nose
+    draw.ellipse([ox + 80*scale, oy + 34*scale, ox + 100*scale, oy + 54*scale], fill=violet)
+    # window
+    draw.ellipse([ox + 88*scale, oy + 95*scale, ox + 112*scale, oy + 119*scale], fill=cyan, outline=(230, 230, 255))
+    # fins
+    draw.polygon([(ox+60*scale, oy+180*scale), (ox+40*scale, oy+160*scale), (ox+60*scale, oy+140*scale)], fill=violet)
+    draw.polygon([(ox+120*scale, oy+180*scale), (ox+140*scale, oy+160*scale), (ox+120*scale, oy+140*scale)], fill=violet)
+    # flame
+    draw.polygon([(ox+90*scale, oy+180*scale), (ox+75*scale, oy+210*scale), (ox+105*scale, oy+210*scale)], fill=flame_red)
+    draw.polygon([(ox+90*scale, oy+182*scale), (ox+78*scale, oy+206*scale), (ox+102*scale, oy+206*scale)], fill=flame_orange)
+    draw.polygon([(ox+90*scale, oy+185*scale), (ox+82*scale, oy+202*scale), (ox+98*scale, oy+202*scale)], fill=flame_yellow)
+
 # =========================
-# Share: OG images
+# RENDERERS
 # =========================
-@app.get("/share/image/top.png")
-def share_image_top():
-    items = PAIRS
+def render_top_classic(items):
     W, H = 1200, 630
     img = Image.new("RGB", (W, H), (17, 26, 33))
     draw = ImageDraw.Draw(img)
-
     draw.rounded_rectangle((40, 40, W-40, H-40), radius=24, fill=(31, 36, 48))
     draw.text((80, 70), "Best Performing Overall", font=_font(44), fill=(230,230,235))
-
     y = 140
     for it in items[:5]:
         y2 = y + 80
@@ -130,17 +176,105 @@ def share_image_top():
         draw.text((160, y+44), it["name"],   font=_font(22), fill=(150,160,173))
         score = f'{it["score"]}% Score'
         apy   = f'{it["apy"]}% APY'
-        w1 = draw.textlength(score, font=_font(24))
-        w2 = draw.textlength(apy,   font=_font(24))
+        w1 = _text_w(draw, score, 24)
+        w2 = _text_w(draw, apy,   24)
         draw.text((W-80- w1 - w2 - 28, y+26), score, font=_font(24), fill=(110, 220, 170))
         draw.text((W-80- w2,            y+26), apy,   font=_font(24), fill=(110, 220, 170))
         y = y2 + 12
         if y > 520:
             break
+    buf = BytesIO(); img.save(buf, "PNG"); buf.seek(0); return buf
 
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
+def render_top_violet(items, tagline="See details in GT-App and trade smarter"):
+    W, H = 1200, 630
+    bg = _linear_gradient(W, H, (12, 10, 20), (30, 15, 60))
+    img = bg.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    # card
+    draw.rounded_rectangle((40, 40, W-40, H-40), radius=28, fill=(26, 20, 46))
+    # header
+    title = "TOP 5 CRYPTO!"
+    draw.text((80, 70), title, font=_fit_text(draw, title, 700, 72), fill=(245,240,255))
+    draw.text((80, 130), "Best Performing Overall", font=_font(28), fill=(180,165,230))
+    # rocket
+    _draw_rocket(draw, ox=900, oy=70, scale=1.1)
+    # list
+    draw.rounded_rectangle((70, 180, W-70, 470), radius=22, fill=(36, 28, 64))
+    y = 195
+    for it in items[:5]:
+        draw.rounded_rectangle((90, y, W-90, y+52), radius=14, fill=(46, 38, 78))
+        draw.text((106, y+14), f"#{it['rank']}", font=_font(22), fill=(160,150,210))
+        draw.text((170, y+8),  it["symbol"], font=_font(26), fill=(245,242,255))
+        draw.text((170, y+30), it["name"],   font=_font(18), fill=(170,160,210))
+        score = f"{it['score']}% Score"; apy = f"{it['apy']}% APY"
+        w2 = _text_w(draw, apy, 22); w1 = _text_w(draw, score, 22); px = W - 110
+        draw.text((px - w2,            y+14), apy,   font=_font(22), fill=(120,230,180))
+        draw.text((px - w2 - 20 - w1,  y+14), score, font=_font(22), fill=(120,230,180))
+        y += 56
+    # tagline
+    f = _fit_text(draw, tagline, W-200, 30)
+    tw = draw.textlength(tagline, font=f)
+    draw.text(((W - tw)//2, 500), tagline, font=f, fill=(210,200,245))
+    buf = BytesIO(); img.save(buf, "PNG"); buf.seek(0); return buf
+
+def render_pair_classic(d: dict):
+    W, H = 1200, 630
+    img = Image.new("RGB", (W, H), (17, 26, 33))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((40, 40, W-40, H-40), radius=24, fill=(31, 36, 48))
+    head = f'{d["name"]} ({d["symbol"]})'
+    draw.text((80, 70), head, font=_font(44), fill=(235,235,240))
+    draw.text((80, 120), f'Trading Score {d["score"]}%', font=_font(26), fill=(110,220,170))
+    price_line = f'${d["price"]:,.2f}'
+    draw.text((80, 180), price_line, font=_font(56), fill=(235,235,240))
+    px_w = _text_w(draw, price_line, 56)
+    ch = "▲" if d["change_pct"] >= 0 else "▼"
+    color = (110,220,170) if d["change_pct"] >= 0 else (240,120,120)
+    draw.text((80 + px_w + 20, 190), f"{ch} {d['change_pct']}%", font=_font(28), fill=color)
+    base_y = 270
+    _draw_kv(draw, 80, base_y +   0, "Binance Volume (24h)", f'${d["volume_24h"]:,.0f}')
+    _draw_kv(draw, 80, base_y +  50, "Cap",                   f'${d["cap"]:,.0f}')
+    _draw_kv(draw, 80, base_y + 100, "Volatility",            f'{d["volatility"]}%')
+    _draw_kv(draw, 80, base_y + 150, "Trend",                 f'{d["trend_pct"]}%')
+    _draw_kv(draw, 80, base_y + 200, "In Channel",            "Yes" if d["in_channel"] else "No")
+    buf = BytesIO(); img.save(buf, "PNG"); buf.seek(0); return buf
+
+def render_pair_violet(d: dict):
+    W, H = 1200, 630
+    bg = _linear_gradient(W, H, (12, 10, 20), (30, 15, 60))
+    img = bg.convert("RGB")
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((40, 40, W-40, H-40), radius=28, fill=(26, 20, 46))
+    head = f'{d["name"]} ({d["symbol"]})'
+    draw.text((80, 70), head, font=_fit_text(draw, head, 700, 56), fill=(245,242,255))
+    draw.text((80, 120), f'Trading Score {d["score"]}%', font=_font(28), fill=(120,230,180))
+    price_line = f'${d["price"]:,.2f}'
+    draw.text((80, 180), price_line, font=_font(60), fill=(245,245,248))
+    px_w = _text_w(draw, price_line, 60)
+    ch = "▲" if d["change_pct"] >= 0 else "▼"
+    color = (120,230,180) if d["change_pct"] >= 0 else (240,120,120)
+    draw.text((80 + px_w + 20, 192), f"{ch} {d['change_pct']}%", font=_font(30), fill=color)
+    # subtle divider/progress bar
+    draw.rounded_rectangle((80, 230, 1120, 246), radius=8, fill=(55, 45, 85))
+    # k/v grid
+    base_y = 270
+    _draw_kv(draw, 80, base_y +   0, "Binance Volume (24h)", f'${d["volume_24h"]:,.0f}', k_color=(175,170,210))
+    _draw_kv(draw, 80, base_y +  50, "Cap",                   f'${d["cap"]:,.0f}',        k_color=(175,170,210))
+    _draw_kv(draw, 80, base_y + 100, "Volatility",            f'{d["volatility"]}%',      k_color=(175,170,210))
+    _draw_kv(draw, 80, base_y + 150, "Trend",                 f'{d["trend_pct"]}%',       k_color=(175,170,210))
+    _draw_kv(draw, 80, base_y + 200, "In Channel",            "Yes" if d["in_channel"] else "No", k_color=(175,170,210))
+    buf = BytesIO(); img.save(buf, "PNG"); buf.seek(0); return buf
+
+# =========================
+# Share: OG images
+# =========================
+@app.get("/share/image/top.png")
+def share_image_top():
+    style = request.args.get("style", DEFAULT_STYLE).lower()
+    if style == "violet":
+        buf = render_top_violet(PAIRS)
+    else:
+        buf = render_top_classic(PAIRS)
     return nocache_png_response(buf)
 
 @app.get("/share/image/pair/<symbol>.png")
@@ -148,33 +282,11 @@ def share_image_pair(symbol):
     d = DETAILS.get(symbol.upper())
     if not d:
         return jsonify({"error": "Not found"}), 404
-
-    W, H = 1200, 630
-    img = Image.new("RGB", (W, H), (17, 26, 33))
-    draw = ImageDraw.Draw(img)
-
-    draw.rounded_rectangle((40, 40, W-40, H-40), radius=24, fill=(31, 36, 48))
-    head = f'{d["name"]} ({d["symbol"]})'
-    draw.text((80, 70), head, font=_font(44), fill=(235,235,240))
-    draw.text((80, 120), f'Trading Score {d["score"]}%', font=_font(26), fill=(110,220,170))
-
-    price_line = f'${d["price"]:,.2f}'
-    draw.text((80, 180), price_line, font=_font(56), fill=(235,235,240))
-    px_w = draw.textlength(price_line, font=_font(56))
-    ch = "▲" if d["change_pct"] >= 0 else "▼"
-    color = (110,220,170) if d["change_pct"] >= 0 else (240,120,120)
-    draw.text((80 + px_w + 20, 190), f"{ch} {d['change_pct']}%", font=_font(28), fill=color)
-
-    base_y = 270
-    _draw_kv(draw, 80, base_y + 0,   "Binance Volume (24h)", f'${d["volume_24h"]:,.0f}')
-    _draw_kv(draw, 80, base_y + 50,  "Cap", f'${d["cap"]:,.0f}')
-    _draw_kv(draw, 80, base_y + 100, "Volatility", f'{d["volatility"]}%')
-    _draw_kv(draw, 80, base_y + 150, "Trend", f'{d["trend_pct"]}%')
-    _draw_kv(draw, 80, base_y + 200, "In Channel", "Yes" if d["in_channel"] else "No")
-
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
+    style = request.args.get("style", DEFAULT_STYLE).lower()
+    if style == "violet":
+        buf = render_pair_violet(d)
+    else:
+        buf = render_pair_classic(d)
     return nocache_png_response(buf)
 
 # =========================
@@ -208,7 +320,7 @@ SHARE_PAGE_TPL = """
 @app.get("/share/top")
 def share_top_page():
     base = request.url_root.rstrip("/")
-    image = bust(base + url_for("share_image_top"))
+    image = bust(base + url_for("share_image_top") + f"?style={DEFAULT_STYLE}")
     app_url = base + "/"
     html = render_template_string(
         SHARE_PAGE_TPL,
@@ -225,7 +337,7 @@ def share_pair_page(symbol):
     if not d:
         return "Not Found", 404
     base = request.url_root.rstrip("/")
-    image = bust(base + url_for("share_image_pair", symbol=symbol.upper()))
+    image = bust(base + url_for("share_image_pair", symbol=symbol.upper()) + f"?style={DEFAULT_STYLE}")
     app_url = base + f"/#/{symbol.upper()}"
     html = render_template_string(
         SHARE_PAGE_TPL,
@@ -241,26 +353,19 @@ def share_pair_page(symbol):
 # =========================
 def _share_payload(kind: str, symbol: Optional[str] = None):
     base = request.url_root.rstrip("/")
+    style_q = f"?style={DEFAULT_STYLE}"
     if kind == "top":
         page  = bust(f"{base}/share/top")
-        image = bust(f"{base}/share/image/top.png")
+        image = bust(f"{base}/share/image/top.png{style_q}")
         title = "Best Performing Overall — Crypto Prototype"
     else:
         assert symbol is not None
         page  = bust(f"{base}/share/pair/{symbol}")
-        image = bust(f"{base}/share/image/pair/{symbol}.png")
+        image = bust(f"{base}/share/image/pair/{symbol}.png{style_q}")
         title = f'{DETAILS[symbol]["name"]} ({symbol}) — Trading Analysis'
-
     tg_url = f"https://t.me/share/url?url={page}&text={title}"
     x_url  = f"https://twitter.com/intent/tweet?text={title}&url={page}"
-
-    return {
-        "page_url": page,
-        "image_url": image,
-        "telegram_url": tg_url,
-        "x_url": x_url,
-        "title": title,
-    }
+    return {"page_url": page, "image_url": image, "telegram_url": tg_url, "x_url": x_url, "title": title}
 
 @app.get("/api/share/top")
 def api_share_top():
