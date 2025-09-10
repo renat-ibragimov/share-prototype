@@ -7,29 +7,49 @@ const menuTop = document.getElementById("menu-top");
 function closeAllMenus() {
   document.querySelectorAll(".menu").forEach(m => m.classList.add("hidden"));
 }
-
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".menu-anchor")) closeAllMenus();
 });
 
+/* ==== Icons ==== */
+/** CDN with many crypto icons (lowercase ticker). */
+function iconUrl(symbol){
+  const s = String(symbol || "").toLowerCase();
+  return `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/32/color/${s}.png`;
+}
+function makeCoinIcon(symbol, big=false){
+  const img = document.createElement("img");
+  img.className = `coin-ic${big ? " big" : ""}`;
+  img.alt = symbol;
+  img.src = iconUrl(symbol);
+  img.referrerPolicy = "no-referrer"; // на всякий
+  img.onerror = () => {
+    const fb = document.createElement("span");
+    fb.className = `coin-ic-fallback${big ? " big" : ""}`;
+    fb.textContent = (symbol || "?")[0] || "?";
+    img.replaceWith(fb);
+  };
+  return img;
+}
+
+/* ==== API ==== */
 async function fetchPairs() {
   const res = await fetch("/api/pairs");
   const data = await res.json();
   return data.items || [];
 }
-
 async function fetchDetails(symbol) {
   const res = await fetch(`/api/pair/${symbol}`);
   if (!res.ok) throw new Error("Not found");
   return res.json();
 }
-
 async function shareData(kind, symbol=null) {
   const url = kind === "top" ? "/api/share/top" : `/api/share/pair/${symbol}`;
   const res = await fetch(url);
   return res.json();
 }
 
+/* ==== Share menus ==== */
 function renderShareMenu(container, payload) {
   container.innerHTML = `
     <button data-x="${payload.x_url}">Share to X</button>
@@ -50,32 +70,45 @@ function renderShareMenu(container, payload) {
   };
 }
 
+/* ==== List rendering ==== */
 function renderPairs(items) {
   pairsRoot.innerHTML = "";
   items.forEach(item => {
     const row = document.createElement("div");
     row.className = "row";
-    row.innerHTML = `
-      <div class="rank">${item.rank}</div>
-      <div class="icon">◎</div>
-      <div class="grow">
-        <div class="symbol">${item.symbol}</div>
-        <div class="name">${item.name}</div>
-      </div>
-      <div class="badges">
-        <span class="badge score">${item.score}% Score</span>
-        <span class="badge apy">${item.apy}% APY</span>
-      </div>
+
+    const rank = document.createElement("div");
+    rank.className = "rank";
+    rank.textContent = item.rank;
+
+    const icon = makeCoinIcon(item.symbol);
+
+    const grow = document.createElement("div");
+    grow.className = "grow";
+    grow.innerHTML = `
+      <div class="symbol">${item.symbol}</div>
+      <div class="name">${item.name}</div>
     `;
+
+    const badges = document.createElement("div");
+    badges.className = "badges";
+    badges.innerHTML = `
+      <span class="badge score">${item.score}% Score</span>
+      <span class="badge apy">${item.apy}% APY</span>
+    `;
+
+    row.append(rank, icon, grow, badges);
     row.addEventListener("click", () => openDetails(item.symbol));
     pairsRoot.appendChild(row);
   });
 }
 
+/* ==== Helpers ==== */
 function formatMoney(n) {
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+/* ==== Details ==== */
 async function openDetails(symbol) {
   const d = await fetchDetails(symbol);
   detailsRoot.classList.remove("hidden");
@@ -83,7 +116,7 @@ async function openDetails(symbol) {
   // header with its own share button + menu
   detailsRoot.innerHTML = `
     <div class="card-header">
-      <span class="icon">🟠</span>
+      <span class="icon">${makeCoinIcon(d.symbol, true).outerHTML}</span>
       <span>${d.name} <span class="tag">${d.symbol}</span></span>
       <div class="menu-anchor" style="margin-left:auto;">
         <button class="icon-btn" id="share-coin-btn">🔗 Share</button>
@@ -103,10 +136,14 @@ async function openDetails(symbol) {
     </div>
   `;
 
+  // after innerHTML, we still want real <img> with fallback behavior in header icon
+  const headerIcon = detailsRoot.querySelector(".card-header .icon");
+  headerIcon.innerHTML = ""; // clear placeholder
+  headerIcon.appendChild(makeCoinIcon(d.symbol, true));
+
   const payload = await shareData("pair", symbol);
   const menuCoin = document.getElementById("menu-coin");
   renderShareMenu(menuCoin, payload);
-
   document.getElementById("share-coin-btn").onclick = (e) => {
     e.stopPropagation();
     menuCoin.classList.toggle("hidden");
@@ -115,6 +152,7 @@ async function openDetails(symbol) {
   detailsRoot.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/* ==== Boot ==== */
 async function boot() {
   const items = await fetchPairs();
   renderPairs(items);

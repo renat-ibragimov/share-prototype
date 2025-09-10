@@ -19,6 +19,7 @@ body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu; backg
 .menu button, .menu a{display:block; width:100%; text-align:left; background:transparent; color:#d6d6d6; border:0; padding:8px 10px; border-radius:8px; cursor:pointer; text-decoration:none}
 .menu button:hover, .menu a:hover{background:#2c3342}
 
+/* list rows */
 .list .row{display:flex; align-items:center; gap:12px; background:var(--panel-2); border-radius:12px; padding:14px; margin:10px 0; cursor:pointer; transition:transform .06s ease}
 .list .row:hover{transform:translateY(-1px)}
 .rank{width:24px; text-align:center; color:var(--muted)}
@@ -33,6 +34,7 @@ body{margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu; backg
 button.primary{background:var(--accent); color:#04140a; border:0; padding:12px 14px; border-radius:12px; font-weight:700; cursor:pointer}
 button.secondary{background:#293040; color:#d6d6d6; border:0; padding:12px 14px; border-radius:12px; cursor:pointer}
 
+/* details */
 .details.hidden{display:none}
 .details .title{display:flex; align-items:center; gap:10px; margin-bottom:8px}
 .details .price{font-size:28px; font-weight:800}
@@ -41,5 +43,14 @@ button.secondary{background:#293040; color:#d6d6d6; border:0; padding:12px 14px;
 .k{color:var(--muted)}
 .v{font-weight:700}
 .tag{font-size:12px; padding:3px 8px; border-radius:999px; background:#ffffff14; color:#ddd}
+
+/* coin icons */
+.coin-ic{width:24px;height:24px;border-radius:999px;display:inline-block;vertical-align:middle}
+.coin-ic.big{width:28px;height:28px}
+.coin-ic-fallback{
+  width:24px;height:24px;border-radius:999px;background:#242938;color:#e4e6eb;
+  display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;
+}
+.coin-ic-fallback.big{width:28px;height:28px;font-size:13px}
 
 @media (max-width:900px){ .wrap{grid-template-columns:1fr} }
